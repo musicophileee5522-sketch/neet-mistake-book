@@ -35,6 +35,7 @@ textarea{min-height:64px;resize:vertical}label{font-size:13px;color:var(--mut);d
 .bar{height:10px;background:var(--line);border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:var(--red);width:0;transition:width .3s}
 .expl{background:var(--hl);border-radius:8px;padding:9px;margin-top:8px;font-size:14px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}.stats div{text-align:center;background:var(--bg);border-radius:9px;padding:8px}.stats b{font:700 30px Caveat,cursive;display:block}
+.study-time{font:700 42px Caveat,cursive;text-align:center;color:var(--blue);padding:12px}.study-note{font-size:13px;color:var(--mut)}
 </style></head><body><div class="wrap">
 <div class="top"><div><h1>✎ My Mistake Book</h1><div class="mut">Every mistake is a free lesson. Write it down, never repeat it.</div></div><button class="btn g s" id="th">🌓</button></div>
 <div class="tabs" id="tabs"></div><div id="v"></div></div>
@@ -42,15 +43,38 @@ textarea{min-height:64px;resize:vertical}label{font-size:13px;color:var(--mut);d
 const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const SUBS=["Physics","Chemistry","Botany","Zoology"],GAP=[1,3,7,14,30],DAY=864e5;
 const Q=["You don’t need to be perfect. You need to be better than yesterday.","Every question you got wrong today is one mark you’ll win on exam day.","The white coat is built one revision at a time.","Doubt kills more dreams than failure ever will. Keep going.","Your NCERT is your best friend. Read it line by line.","Tired? Rest, don’t quit. Tomorrow’s you will thank today’s you.","Rank is temporary. The doctor you become is forever.","Small daily improvements are the secret of big results.","Mistakes are proof that you are trying. Fix them and rise.","Don’t count the days. Make the days count."];
-let S={date:"2027-05-02",m:[],qi:0,hist:[]};
+let S={date:"2027-05-02",m:[],qi:0,hist:[],study:{target:120,history:[],current:null}};
 try{Object.assign(S,JSON.parse(localStorage.getItem("nbk")||"{}"))}catch(e){}
 const save=()=>{try{localStorage.setItem("nbk",JSON.stringify(S))}catch(e){}};
 let tab="home",T=null,tick=null,filt="All",dueOnly=false,gen=null;
-const tabs=[["home","🏠 Home"],["book","📒 Mistakes"],["test","🤖 AI Test"]];
+S.study=S.study||{target:120,history:[],current:null};S.study.history=S.study.history||[];
+const tabs=[["home","🏠 Home"],["book","📒 Mistakes"],["study","⏱ Study Hours"],["test","🤖 AI Test"]];
 function nav(){$("#tabs").innerHTML=tabs.map(t=>`<button class="${tab==t[0]?"on":""}" data-t="${t[0]}">${t[1]}</button>`).join("");$("#tabs").onclick=e=>{const t=e.target.dataset.t;if(t){tab=t;render()}}}
 $("#th").onclick=()=>{const r=document.documentElement,d=r.dataset.theme?r.dataset.theme=="dark":matchMedia("(prefers-color-scheme:dark)").matches;r.dataset.theme=d?"light":"dark"};
 const dueN=()=>S.m.filter(x=>!x.done&&x.due<=Date.now()).length;
-function render(){clearInterval(tick);nav();({home,book,test})[tab]()}
+function render(){clearInterval(tick);nav();({home,book,study,test})[tab]()}
+/* STUDY HOURS: elapsed time uses timestamps, so screen-off/background time is counted when the page resumes. */
+function studyElapsed(c){return (c?.elapsed||0)+(c?.running&&c.activeSince?Date.now()-c.activeSince:0)}
+function fmtStudy(ms){const sec=Math.floor(Math.max(0,ms)/1000);return String(Math.floor(sec/3600)).padStart(2,"0")+":"+String(Math.floor(sec%3600/60)).padStart(2,"0")+":"+String(sec%60).padStart(2,"0")}
+function study(){
+ const st=S.study;let c=st.current;
+ const today=new Date().toISOString().slice(0,10);
+ const todayMs=st.history.filter(x=>x.date===today).reduce((a,x)=>a+x.ms,0)+(c&&c.date===today?studyElapsed(c):0);
+ const goal=Math.max(1,Number(st.target)||120),pct=Math.min(100,Math.round(todayMs/(goal*60000)*100));
+ const last7=Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toISOString().slice(0,10);return {key,label:d.toLocaleDateString(undefined,{weekday:"short"}),ms:st.history.filter(x=>x.date===key).reduce((a,x)=>a+x.ms,0)}});
+ $("#v").innerHTML=`<div class="card"><h2>⏱ Effective Study Hours</h2><p class="mut">Start the timer, then study from your books. Time continues counting if your screen turns off or you switch apps. Pause it manually when you take a break.</p>
+ <div class="study-time" id="studyClock">${fmtStudy(c?studyElapsed(c):0)}</div>
+ <div class="row"><button class="btn" id="studyStart" ${c&&c.running?"disabled":""}>${c&&!c.running?"▶ Resume":"▶ Start studying"}</button><button class="btn g" id="studyPause" ${!c||!c.running?"disabled":""}>⏸ Pause</button><button class="btn g" id="studyFinish" ${!c?"disabled":""}>✓ Finish session</button></div>
+ <label>Daily target (minutes)</label><div class="row"><input type="number" id="studyTarget" min="1" max="1440" value="${goal}"><button class="btn g" id="saveTarget">Save target</button></div>
+ <div style="margin-top:12px"><div class="row"><strong>Today: ${fmtStudy(todayMs)}</strong><span class="mut" style="text-align:right">${pct}% of ${goal} min goal</span></div><div class="bar"><i style="width:${pct}%"></i></div></div></div>
+ <div class="card"><h2>📅 Last 7 days</h2><div class="stats">${last7.map(d=>`<div><b>${Math.round(d.ms/60000)}</b><span class="mut">${d.label} min</span></div>`).join("")}</div><p class="study-note">Times are saved in this browser on this device.</p></div>
+ <div class="card"><h2>Recent sessions</h2>${st.history.length?st.history.slice(-10).reverse().map(x=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)"><span>${esc(x.date)}</span><strong style="text-align:right">${fmtStudy(x.ms)}</strong></div>`).join(""):`<p class="mut">Your finished sessions will appear here.</p>`}</div>`;
+ $("#studyStart").onclick=()=>{if(!st.current)st.current={date:new Date().toISOString().slice(0,10),elapsed:0,running:false,activeSince:0};st.current.date=new Date().toISOString().slice(0,10);st.current.running=true;st.current.activeSince=Date.now();save();study()};
+ $("#studyPause").onclick=()=>{if(c&&c.running){c.elapsed=studyElapsed(c);c.running=false;c.activeSince=0;save();study()}};
+ $("#studyFinish").onclick=()=>{if(!c)return;const ms=studyElapsed(c);if(ms>0)st.history.push({date:c.date||today,ms});st.current=null;save();study()};
+ $("#saveTarget").onclick=()=>{const n=Math.max(1,Math.min(1440,Number($("#studyTarget").value)||120));st.target=n;save();study()};
+ if(c&&c.running)tick=setInterval(()=>{const live=S.study.current;if(!live||!live.running){clearInterval(tick);return}const el=$("#studyClock");if(el)el.textContent=fmtStudy(studyElapsed(live));},1000);
+}
 /* HOME */
 function home(){
 const mast=S.m.filter(x=>x.done).length,sc=SUBS.map(s=>[s,S.m.filter(x=>x.sub==s).length]);
